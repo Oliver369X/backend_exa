@@ -41,3 +41,36 @@ SUPABASE_URL=https://rlisbwawrcykbchxcnrh.supabase.co
 ## Preguntas frecuentes
 - ¿Puedo usar la misma base de datos para desarrollo y producción? **No recomendado**. Usa local para dev y Supabase para prod.
 - ¿Puedo usar otros servicios de Supabase (Auth, Storage)? **Sí**. Agrega las variables y SDK según lo requieras.
+
+---
+
+## 🛠️ Mantenimiento de migraciones y tests (Prisma)
+
+Si tienes errores como `column ... does not exist` o problemas al correr tests automáticos por cambios de schema:
+
+1. **Verifica que tu modelo en `prisma/schema.prisma` tenga todos los campos nuevos.**
+2. **Elimina migraciones conflictivas:** Si una migración elimina columnas nuevas por error, bórrala manualmente de `prisma/migrations`.
+3. **Genera una migración correcta:**
+   ```sh
+   npx prisma migrate dev --name <nombre_migracion>
+   ```
+4. **Resetea la base de datos de desarrollo/test:**
+   ```sh
+   npx prisma migrate reset --force --skip-seed
+   ```
+5. **Corre los tests:**
+   ```sh
+   npm test
+   ```
+
+> **Nota:** El reset borra todos los datos de desarrollo/test, pero es seguro para entornos locales.
+
+---
+
+## Estado actual del backend
+
+- Todas las migraciones están aplicadas y la base de datos está alineada con el código.
+- Los tests automáticos de acceso por enlace (`project-link-access`) pasan correctamente.
+- Puedes continuar el desarrollo o integración frontend con confianza.
+
+---

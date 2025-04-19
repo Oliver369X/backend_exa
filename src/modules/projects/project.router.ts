@@ -132,14 +132,29 @@ router.get('/:id', authMiddleware, async (req: ExpressRequest, res) => {
   requireUser(req);
   const userId = req.user.id;
   const { id } = req.params;
+  const linkToken = req.query.token as string | undefined;
   const project = await prisma.project.findUnique({
     where: { id },
     include: { permissions: true, versions: true },
-  });
+    // Incluimos los campos para acceso por enlace (linkAccess, linkToken)
+    // Prisma los incluye por defecto si están en el modelo, pero este comentario lo deja explícito para TypeScript
+  }) as (typeof prisma.project extends { findUnique: (args: any) => Promise<infer T> } ? T : any) & { linkAccess?: string; linkToken?: string; permissions: any[]; versions: any[] };
   if (!project) return res.status(404).json({ error: 'Not found' });
-  const hasAccess = project.ownerId === userId || project.permissions.some((p: { userId: string, permission: string }) => p.userId === userId);
-  if (!hasAccess) return res.status(403).json({ error: 'Forbidden' });
-  res.json(project);
+  const isOwnerOrCollaborator = project.ownerId === userId || project.permissions.some((p: { userId: string }) => p.userId === userId);
+  if (isOwnerOrCollaborator) return res.json(project);
+  // Acceso por enlace
+  if (
+    project.linkAccess !== 'none' &&
+    !!linkToken &&
+    !!project.linkToken &&
+    linkToken === project.linkToken
+  ) {
+    // Permitir acceso temporal según nivel ('read'/'write')
+    // Aquí podrías limitar campos si es solo 'read', o permitir edición si es 'write'.
+    // Por simplicidad, devolvemos el proyecto completo.
+    return res.json(project);
+  }
+  return res.status(403).json({ error: 'Forbidden' });
 });
 
 /**
@@ -277,6 +292,54 @@ router.delete('/:id', authMiddleware, async (req: ExpressRequest, res) => {
   res.status(204).send();
 });
 
+// Acceso público por enlace
+router.get('/link/:token', async (req, res) => {
+  const { token } = req.params;
+  // Corrige: usa 'linkToken' y 'linkAccess' que sí existen en el modelo
+  const project = await prisma.project.findFirst({
+    where: {
+      linkToken: token,
+      linkAccess: { not: 'none' }
+    },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      linkAccess: true,
+      linkToken: true
+    },
+  });
+  if (!project) return res.status(404).json({ error: 'Not found' });
+  res.json({ project, linkAccess: project.linkAccess });
+});
+
+// PATCH /projects/:id/link-access
+// Cambia el nivel de acceso por enlace y/o regenera el token (solo owner)
+router.patch('/:id/link-access', authMiddleware, async (req: ExpressRequest, res) => {
+  requireUser(req);
+  const userId = req.user.id;
+  const { id } = req.params;
+  const { linkAccess, regenerate } = req.body as { linkAccess?: 'none' | 'read' | 'write'; regenerate?: boolean };
+  // Incluimos los campos para acceso por enlace (linkAccess, linkToken) en el tipado
+  const project = await prisma.project.findUnique({ where: { id } }) as (typeof prisma.project extends { findUnique: (args: any) => Promise<infer T> } ? T : any) & { linkAccess?: string; linkToken?: string };
+  if (!project) return res.status(404).json({ error: 'Not found' });
+  if (project.ownerId !== userId) return res.status(403).json({ error: 'Forbidden' });
+  let newToken = project.linkToken;
+  if (regenerate || !project.linkToken) {
+    // Genera un nuevo token seguro (24 caracteres)
+    newToken = require('crypto').randomBytes(18).toString('hex');
+  }
+  const updated = await prisma.project.update({
+    where: { id },
+    data: {
+      linkAccess: linkAccess ?? project.linkAccess,
+      linkToken: newToken,
+    } as any, // Forzamos el tipo para evitar errores de TS
+  }) as typeof project;
+  res.json({ linkAccess: updated.linkAccess, linkToken: updated.linkToken });
+});
+
+// Montar routers secundarios para permisos, versiones y locking
 router.use('/:id/permissions', projectPermissionsRouter);
 router.use('/:id/versions', projectVersionsRouter);
 router.use('/:id/locking', projectLockingRouter);

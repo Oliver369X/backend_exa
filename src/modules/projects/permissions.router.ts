@@ -75,6 +75,34 @@ router.post('/', authMiddleware, async (req: Request, res: Response) => {
 
 /**
  * @openapi
+ * /api/projects/{id}/permissions:
+ *   get:
+ *     summary: Lista todos los permisos del proyecto
+ *     tags:
+ *       - Project Permissions
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Lista de permisos
+ *       404:
+ *         description: No encontrado
+ */
+// GET /projects/:id/permissions - lista todos los permisos del proyecto
+router.get('/', async (req: Request, res: Response) => {
+  const { id: projectId } = req.params;
+  // Busca el proyecto y sus permisos
+  const project = await prisma.project.findUnique({ where: { id: projectId }, include: { permissions: true } });
+  if (!project) return res.status(404).json({ error: 'Not found' });
+  res.json(project.permissions ?? []);
+});
+
+/**
+ * @openapi
  * /api/projects/{id}/permissions/{userId}:
  *   delete:
  *     summary: Elimina el permiso de un usuario en un proyecto (solo owner)

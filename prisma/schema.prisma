@@ -40,6 +40,8 @@ model Project {
   versions    ProjectVersion[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  linkAccess String   @default("none") // 'none' | 'read' | 'write' (nivel de acceso por enlace)
+  linkToken  String?  // token único para el link compartido
 }
 
 model ProjectPermission {
