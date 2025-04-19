@@ -1,0 +1,28 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: platform_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+  backend:
+    build: .
+    depends_on:
+      - db
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/platform_db?schema=public
+      JWT_SECRET: supersecretkey
+      PORT: 4000
+    ports:
+      - "4000:4000"
+    volumes:
+      - .:/app
+    command: npm run dev
+volumes:
+  db_data:

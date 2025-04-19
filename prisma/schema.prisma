@@ -1,0 +1,65 @@
+// Prisma schema for User model
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                   String   @id @default(uuid())
+  email                String   @unique
+  passwordHash         String
+  name                 String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  passwordResetToken   String?   // For password recovery
+  passwordResetExpires DateTime?
+
+  // Project relations
+  ownedProjects        Project[]        @relation("Project_owner")
+  lockedProjects       Project[]        @relation("LockedBy")
+  projectPermissions   ProjectPermission[] @relation("ProjectPermission_user")
+  createdVersions      ProjectVersion[] @relation("ProjectVersion_createdBy")
+}
+
+model Project {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  ownerId     String
+  owner       User     @relation("Project_owner", fields: [ownerId], references: [id])
+  isArchived  Boolean  @default(false)
+  lockedById  String?  // user id who locked
+  lockedBy    User?    @relation("LockedBy", fields: [lockedById], references: [id])
+  lockedAt    DateTime?
+  permissions ProjectPermission[]
+  versions    ProjectVersion[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ProjectPermission {
+  id        String   @id @default(uuid())
+  project   Project  @relation(fields: [projectId], references: [id])
+  projectId String
+  user      User     @relation("ProjectPermission_user", fields: [userId], references: [id])
+  userId    String
+  permission String  // 'read' | 'write'
+
+  @@unique([projectId, userId])
+}
+
+model ProjectVersion {
+  id          String   @id @default(uuid())
+  project     Project  @relation(fields: [projectId], references: [id])
+  projectId   String
+  createdBy   User     @relation("ProjectVersion_createdBy", fields: [createdById], references: [id])
+  createdById String
+  createdAt   DateTime @default(now())
+  comment     String?
+  snapshot    Json
+}
