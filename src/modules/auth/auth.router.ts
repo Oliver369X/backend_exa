@@ -91,7 +91,7 @@ router.post('/login', validateBody(loginSchema), async (req, res) => {
   if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
   // JWT payload debe incluir id, email y name para el middleware
   const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, process.env.JWT_SECRET!, { expiresIn: '7d' });
-  res.json({ token });
+  res.json({ id: user.id, name: user.name, token });
 });
 
 export const authRouter = router;

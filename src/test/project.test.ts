@@ -75,6 +75,29 @@ describe('Project Module', () => {
     expect(res.body.isArchived).toBe(false);
   });
 
+  it('should save and retrieve project designData', async () => {
+    const designData = {
+      components: [{ type: 'text', content: 'Hello World' }],
+      styles: '.text { color: blue; }'
+    };
+
+    // Update the project with designData (using PATCH for simplicity)
+    const updateRes = await request(app)
+      .patch(`/projects/${projectId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ designData });
+    expect(updateRes.status).toBe(200);
+    // Prisma might return JSON as string or object, be flexible
+    expect(updateRes.body.designData).toBeDefined();
+
+    // Get the project and verify designData
+    const getRes = await request(app)
+      .get(`/projects/${projectId}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.designData).toEqual(designData);
+  });
+
   afterAll(async () => {
     const owner = await prisma.user.findUnique({ where: { email } });
     if (owner) {

@@ -7,10 +7,13 @@ import { userRouter } from './modules/users/user.router';
 import { passwordRecoveryRouter } from './modules/auth/password-recovery.router';
 import { projectRouter } from './modules/projects/project.router';
 import { setupSwagger } from './swagger';
+import { setupCollabSocket } from "./socket/collab-socket";
+import http from "http";
 
 dotenv.config();
 
 const app = express();
+const server = http.createServer(app);
 app.use(cors());
 app.use(json());
 
@@ -27,8 +30,10 @@ setupSwagger(app);
 
 const port = process.env.PORT || 4000;
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+  // --- Levanta API + Socket.io en el mismo proceso ---
+  setupCollabSocket(server, app);
+  server.listen(port, () => {
+    console.log(`API + Collab WebSocket server running on port ${port}`);
   });
 }
 

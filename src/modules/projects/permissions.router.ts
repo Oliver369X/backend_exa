@@ -7,7 +7,11 @@ import { authMiddleware } from '../auth/auth.middleware';
 const prisma = new PrismaClient();
 const router = Router({ mergeParams: true });
 
-const permissionSchema = z.object({ userId: z.string().uuid(), permission: z.enum(['read', 'write']) });
+// Esquema Zod para añadir/actualizar permiso (AHORA USA EMAIL)
+const permissionAddSchema = z.object({
+  email: z.string().email(), // Cambiado de userId a email
+  permission: z.enum(['read', 'write'])
+});
 
 // Helper: assert user is present (type guard)
 function requireUser(req: Request): asserts req is Request & { user: { id: string } } {
@@ -36,8 +40,9 @@ function requireUser(req: Request): asserts req is Request & { user: { id: strin
  *           schema:
  *             type: object
  *             properties:
- *               userId:
+ *               email:       # Cambiado de userId a email
  *                 type: string
+ *                 format: email
  *               permission:
  *                 type: string
  *                 enum: [read, write]
@@ -55,22 +60,58 @@ function requireUser(req: Request): asserts req is Request & { user: { id: strin
 router.post('/', authMiddleware, async (req: Request, res: Response) => {
   requireUser(req);
   const { id: projectId } = req.params;
-  const userId = req.user.id;
-  const parse = permissionSchema.safeParse(req.body);
-  if (!parse.success) return res.status(400).json({ error: parse.error.errors });
-  const { userId: targetUserId, permission } = parse.data;
-  // Only owner can manage permissions
+  const ownerUserId = req.user.id; // ID del usuario que hace la petición (debe ser owner)
+
+  // 1. Validar el cuerpo de la petición usando el nuevo esquema
+  const parse = permissionAddSchema.safeParse(req.body);
+  if (!parse.success) {
+    console.error('Validation Error:', parse.error.errors);
+    return res.status(400).json({ error: 'Invalid request body', details: parse.error.errors });
+  }
+  const { email: targetEmail, permission } = parse.data;
+
+  // 2. Verificar que quien hace la petición es el dueño del proyecto
   const project = await prisma.project.findUnique({ where: { id: projectId } });
-  if (!project) return res.status(404).json({ error: 'Not found' });
-  if (project.ownerId !== userId) return res.status(403).json({ error: 'Forbidden' });
-  // Upsert permission
-  const updated = await prisma.projectPermission.upsert({
-    where: { projectId_userId: { projectId, userId: targetUserId } },
-    update: { permission },
-    create: { projectId, userId: targetUserId, permission },
-  });
-  // Respuesta estándar para el frontend/test
-  res.status(200).json({ userId: updated.userId, permission: updated.permission });
+  if (!project) {
+    return res.status(404).json({ error: 'Project not found' });
+  }
+  if (project.ownerId !== ownerUserId) {
+    return res.status(403).json({ error: 'Forbidden: Only the project owner can manage permissions' });
+  }
+
+  // 3. Buscar al usuario colaborador por su email
+  let targetUser;
+  try {
+    targetUser = await prisma.user.findUnique({ where: { email: targetEmail } });
+  } catch (dbError) {
+    console.error('Database error finding target user:', dbError);
+    return res.status(500).json({ error: 'Database error checking user' });
+  }
+
+  if (!targetUser) {
+    return res.status(404).json({ error: `User with email ${targetEmail} not found` });
+  }
+  const targetUserId = targetUser.id;
+
+  // Evitar que el dueño se añada/modifique a sí mismo a través de esta ruta
+  if (targetUserId === ownerUserId) {
+      return res.status(400).json({ error: 'Cannot manage owner permissions through this route' });
+  }
+
+  // 4. Crear o actualizar (Upsert) el permiso para el targetUserId encontrado
+  try {
+    const updatedPermission = await prisma.projectPermission.upsert({
+      where: { projectId_userId: { projectId, userId: targetUserId } }, // Clave única compuesta
+      update: { permission }, // Qué actualizar si existe
+      create: { projectId, userId: targetUserId, permission }, // Qué crear si no existe
+    });
+    // Responder con el permiso creado/actualizado
+    res.status(200).json({ userId: updatedPermission.userId, permission: updatedPermission.permission });
+  } catch (dbError) {
+    console.error('Database error upserting permission:', dbError);
+    // Podría ser un error de constraint si algo va mal
+    return res.status(500).json({ error: 'Database error saving permission' });
+  }
 });
 
 /**

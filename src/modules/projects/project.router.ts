@@ -23,6 +23,56 @@ function requireUser(req: ExpressRequest): asserts req is ExpressRequest & { use
 
 /**
  * @openapi
+ * components:
+ *   schemas:
+ *     Project:
+ *       type: object
+ *       properties:
+ *         id:
+ *           type: string
+ *         name:
+ *           type: string
+ *         description:
+ *           type: string
+ *           nullable: true
+ *         ownerId:
+ *           type: string
+ *         isArchived:
+ *           type: boolean
+ *         designData:
+ *           type: object
+ *           description: Stores the current design state (e.g., GrapesJS JSON and CSS)
+ *           nullable: true
+ *         lockedById:
+ *           type: string
+ *           nullable: true
+ *         lockedAt:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *         linkAccess:
+ *           type: string
+ *         linkToken:
+ *           type: string
+ *           nullable: true
+ *         createdAt:
+ *           type: string
+ *           format: date-time
+ *         updatedAt:
+ *           type: string
+ *           format: date-time
+ *         permissions:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/ProjectPermission' # Assuming you define this schema elsewhere
+ *         versions:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/ProjectVersion' # Assuming you define this schema elsewhere
+ */
+
+/**
+ * @openapi
  * /projects:
  *   post:
  *     summary: Crea un nuevo proyecto
@@ -46,6 +96,10 @@ function requireUser(req: ExpressRequest): asserts req is ExpressRequest & { use
  *     responses:
  *       201:
  *         description: Proyecto creado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Project'
  *       400:
  *         description: Error de validación
  */
@@ -89,6 +143,12 @@ router.post('/', authMiddleware, async (req: ExpressRequest, res) => {
  *     responses:
  *       200:
  *         description: Lista de proyectos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 $ref: '#/components/schemas/Project'
  */
 router.get('/', authMiddleware, async (req: ExpressRequest, res) => {
   requireUser(req);
@@ -123,6 +183,10 @@ router.get('/', authMiddleware, async (req: ExpressRequest, res) => {
  *     responses:
  *       200:
  *         description: Proyecto encontrado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Project'
  *       404:
  *         description: No encontrado
  *       403:
@@ -187,9 +251,16 @@ router.get('/:id', authMiddleware, async (req: ExpressRequest, res) => {
  *               description:
  *                 type: string
  *                 nullable: true
+ *               designData:
+ *                 type: object
+ *                 nullable: true
  *     responses:
  *       200:
  *         description: Proyecto actualizado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Project'
  *       400:
  *         description: Error de validación
  *       404:
@@ -238,6 +309,10 @@ router.patch('/:id', authMiddleware, async (req: ExpressRequest, res) => {
  *     responses:
  *       200:
  *         description: Proyecto actualizado
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Project'
  *       404:
  *         description: No encontrado
  *       403:
