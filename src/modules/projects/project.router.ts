@@ -14,7 +14,12 @@ const router = Router();
 
 // Zod schemas
 const projectCreateSchema = z.object({ name: z.string().min(2), description: z.string().optional() });
-const projectUpdateSchema = z.object({ name: z.string().min(2).optional(), isArchived: z.boolean().optional(), description: z.string().optional() });
+const projectUpdateSchema = z.object({
+  name: z.string().min(2).optional(),
+  isArchived: z.boolean().optional(),
+  description: z.string().optional(),
+  designData: z.any().optional(), // Permitir designData
+});
 
 // Helper: assert user is present (type guard)
 function requireUser(req: ExpressRequest): asserts req is ExpressRequest & { user: { id: string } } {
@@ -269,17 +274,55 @@ router.get('/:id', authMiddleware, async (req: ExpressRequest, res) => {
  *         description: Prohibido
  */
 router.patch('/:id', authMiddleware, async (req: ExpressRequest, res) => {
+  // --- LOG DE GUARDADO (Backend Inicio) --- 
+  console.log(`[Project Router] Received PATCH /projects/${req.params.id}`);
+  // ---------------------------------------
   requireUser(req);
   const userId = req.user.id;
   const { id } = req.params;
+  
+  // --- LOG: Body recibido --- 
+  console.log('[Project Router] Request body:', JSON.stringify(req.body).substring(0, 200) + '...'); // Loguear parte del body
+  // -------------------------
+  
   const parse = projectUpdateSchema.safeParse(req.body);
-  if (!parse.success) return res.status(400).json({ error: parse.error.errors });
+  if (!parse.success) {
+    console.error('[Project Router] Validation error:', parse.error.errors);
+    return res.status(400).json({ error: parse.error.errors });
+  }
+  
   const project = await prisma.project.findUnique({ where: { id }, include: { permissions: true } });
-  if (!project) return res.status(404).json({ error: 'Not found' });
+  if (!project) {
+    console.warn(`[Project Router] Project not found: ${id}`);
+    return res.status(404).json({ error: 'Not found' });
+  }
+  
   const canEdit = project.ownerId === userId || project.permissions.some((p: { userId: string, permission: string }) => p.userId === userId && p.permission === 'write');
-  if (!canEdit) return res.status(403).json({ error: 'Forbidden' });
-  const updated = await prisma.project.update({ where: { id }, data: parse.data, include: { permissions: true } });
-  res.json(updated);
+  if (!canEdit) {
+    console.warn(`[Project Router] Forbidden access for user ${userId} on project ${id}`);
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  
+  // --- LOG antes de actualizar DB --- 
+  console.log(`[Project Router] Attempting to update project ${id} with data:`, parse.data);
+  // --------------------------------
+  
+  try {
+    const updated = await prisma.project.update({ 
+        where: { id }, 
+        data: parse.data, 
+        include: { permissions: true } 
+    });
+    // --- LOG después de actualizar DB --- 
+    console.log(`[Project Router] Project ${id} updated successfully.`);
+    // ---------------------------------
+    res.json(updated);
+  } catch (dbError: unknown) {
+     // --- LOG de error DB --- 
+     console.error(`[Project Router] Database error updating project ${id}:`, dbError);
+     // ----------------------
+     res.status(500).json({ error: 'Database error during update' });
+  }
 });
 
 /**
