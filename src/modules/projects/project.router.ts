@@ -114,26 +114,52 @@ router.post('/', authMiddleware, async (req: ExpressRequest, res) => {
   if (!userId) {
     return res.status(401).json({ error: 'No userId in request (auth failed)' });
   }
+
+  // *** NUEVA VERIFICACIÓN ***
+  // Antes de intentar crear el proyecto, verifica si el usuario del token existe en la BD
+  try {
+    const ownerExists = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true } // Solo necesitamos saber si existe, no traer todo el usuario
+    });
+
+    if (!ownerExists) {
+      console.error(`[Project Create] Error: User ID '${userId}' from token not found in database.`);
+      // Devolver un error claro. 404 (Not Found) o 401 (Unauthorized) son opciones.
+      // 404 tiene sentido porque el recurso (User) referenciado no se encontró.
+      return res.status(404).json({ error: 'Owner user specified in token not found in database.' });
+    }
+  } catch (dbError) {
+      console.error(`[Project Create] Database error verifying owner ID '${userId}':`, dbError);
+      return res.status(500).json({ error: 'Database error verifying owner' });
+  }
+  // *** FIN DE LA NUEVA VERIFICACIÓN ***
+
   const parse = projectCreateSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: parse.error.errors });
   const { name, description } = parse.data;
-  // Use correct Prisma model: 'project' should be 'project' (lowercase) as per PrismaClient
-  // All usages are correct if your schema.prisma has 'model Project' (not 'Projects')
-  // If your PrismaClient is missing 'project', regenerate with `npx prisma generate`
-  // If still missing, check for typos in schema or model name
-  // No code change needed if model is correct
-  const project = await prisma.project.create({
-    data: {
-      name,
-      description,
-      ownerId: userId,
-      permissions: {
-        create: [{ userId, permission: 'write' }],
+
+  try {
+    // Ahora estamos más seguros de que userId existe antes de llamar a create
+    const project = await prisma.project.create({
+      data: {
+        name,
+        description,
+        ownerId: userId, // Usar el userId verificado
+        permissions: {
+          create: [{ userId, permission: 'write' }],
+        },
       },
-    },
-    include: { permissions: true },
-  });
-  res.status(201).json(project);
+      include: { permissions: true },
+    });
+    res.status(201).json(project);
+  } catch (createError) {
+      // Si AÚN hay un error de Foreign Key aquí, sería extremadamente raro
+      // o indicaría un problema diferente (ej. la FK en permissions).
+      console.error(`[Project Create] Error during prisma.project.create for owner '${userId}':`, createError);
+      // Devolver un error genérico de servidor si falla la creación por otra razón
+      return res.status(500).json({ error: 'Failed to create project due to database error.' });
+  }
 });
 
 /**

@@ -24,6 +24,18 @@ model User {
   lockedProjects       Project[]        @relation("LockedBy")
   projectPermissions   ProjectPermission[] @relation("ProjectPermission_user")
   createdVersions      ProjectVersion[] @relation("ProjectVersion_createdBy")
+  collaboratedProjects  Project[]        @relation("ProjectCollaborator")
+  recoveryTokens       PasswordRecoveryToken[]
+}
+
+model PasswordRecoveryToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  used      Boolean   @default(false)
+  createdAt DateTime  @default(now())
 }
 
 model Project {
@@ -43,6 +55,13 @@ model Project {
   updatedAt   DateTime @updatedAt
   linkAccess String   @default("none") // 'none' | 'read' | 'write' (nivel de acceso por enlace)
   linkToken  String?  // token único para el link compartido
+  html        String?
+  css         String?
+  js          String?
+  components  Json?
+  assets      Json?
+  collaborators User[]  @relation("ProjectCollaborator")
+  pages         Page[]    @relation("ProjectPages")
 }
 
 model ProjectPermission {
@@ -65,4 +84,22 @@ model ProjectVersion {
   createdAt   DateTime @default(now())
   comment     String?
   snapshot    Json
+}
+
+model Page {
+  id          String    @id @default(uuid())
+  clientId    String    // ID generado por el cliente para sincronización
+  name        String
+  html        String?
+  css         String?
+  components  Json?     // Almacena la estructura de componentes GrapesJS
+  isDefault   Boolean   @default(false) // Indica si es la página principal
+  isDeleted   Boolean   @default(false) // Borrado lógico
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  projectId   String
+  project     Project   @relation("ProjectPages", fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, clientId]) // Garantiza que clientId sea único dentro del proyecto
+  @@index([projectId, isDeleted]) // Índice para buscar páginas no eliminadas por proyecto
 }

@@ -10,6 +10,7 @@ import { Server as HttpServer } from 'http';
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { PrismaClient } from '@prisma/client';
+import { registerPageSocketHandlers } from '../modules/pages';
 
 // Cliente de Prisma para acceder a la base de datos
 const prisma = new PrismaClient();
@@ -42,7 +43,7 @@ const activeUsers = new Map<string, Map<string, { id: string; name: string }>>()
  * @param httpServer - Servidor HTTP para adjuntar Socket.IO
  * @param app - Aplicación Express
  */
-export function setupCollabSocket(httpServer: HttpServer, app: any): void {
+export function setupCollabSocket(httpServer: HttpServer, app?: any): Server {
   log.info('Inicializando servidor de colaboración Socket.IO');
   
   // Crear instancia de Socket.IO con configuración CORS
@@ -54,6 +55,9 @@ export function setupCollabSocket(httpServer: HttpServer, app: any): void {
       credentials: true
     }
   });
+  
+  // Registrar manejadores para la funcionalidad de páginas
+  registerPageSocketHandlers(io);
   
   // Middleware de autenticación
   io.use(async (socket: SocketWithUser, next) => {
@@ -162,7 +166,7 @@ export function setupCollabSocket(httpServer: HttpServer, app: any): void {
       socket.join(projectId);
       log.info('Socket unido a la sala', { socketId: socket.id, room: projectId });
       
-      // Registrar usuario activo y notificar presencia (código movido aquí para asegurar que se une a la sala)
+      // Registrar usuario activo y notificar presencia
       const usersInProject = Array.from(activeUsers.get(projectId)!.values());
       io.to(projectId).emit('presence-update', usersInProject);
       log.debug('Actualización de presencia emitida', { projectId, activeCount: usersInProject.length });
@@ -190,27 +194,36 @@ export function setupCollabSocket(httpServer: HttpServer, app: any): void {
         data: fullUpdateData, // Enviar el objeto completo recibido
         timestamp: Date.now()
       });
-      log.debug('Evento editor:full-update RETRANSMITIDO a la sala', { projectId, fromUserId: user.id });
     });
     
-    // Evento: Mensaje de chat
-    socket.on('chat:message', (data) => {
-      log.info('Mensaje de chat recibido', { 
+    // Manejar evento de cambio
+    socket.on('editor:change', (changeData) => {
+      log.debug('Evento editor:change recibido', { 
         userId: user.id, 
-        projectId,
-        message: data.message?.substring(0, 20) + (data.message?.length > 20 ? '...' : '')
+        projectId, 
+        type: changeData?.type 
       });
       
-      // Reenviar mensaje a todos los usuarios en el proyecto
-      io.to(projectId).emit('chat:message', {
+      // Retransmitir el cambio a los demás en la sala
+      socket.to(projectId).emit('editor:change', {
         userId: user.id,
         userName: user.name,
-        message: data.message,
-        timestamp: data.timestamp || Date.now()
+        change: changeData,
+        timestamp: Date.now()
       });
     });
     
-    // Evento: Desconexión
+    // Manejar movimiento de cursor
+    socket.on('cursor:move', (position) => {
+      socket.to(projectId).emit('cursor:move', {
+        userId: user.id,
+        userName: user.name,
+        position,
+        timestamp: Date.now()
+      });
+    });
+    
+    // Manejar desconexión
     socket.on('disconnect', () => {
       log.info('Cliente desconectado', { 
         socketId: socket.id, 
@@ -220,36 +233,27 @@ export function setupCollabSocket(httpServer: HttpServer, app: any): void {
       
       handleUserLeave(socket);
     });
-    
-    // Función auxiliar para manejar la salida de usuarios
-    function handleUserLeave(socket: SocketWithUser) {
-      const user = socket.user!;
-      const projectId = socket.projectId!;
-      
-      if (activeUsers.has(projectId)) {
-        // Eliminar usuario de la lista de activos
-        activeUsers.get(projectId)!.delete(user.id);
-        
-        // Si no quedan usuarios activos, limpiar el proyecto
-        if (activeUsers.get(projectId)!.size === 0) {
-          activeUsers.delete(projectId);
-          log.debug('Proyecto sin usuarios activos, eliminado del seguimiento', { projectId });
-        } else {
-          // Notificar a los usuarios restantes
-          const usersInProject = Array.from(activeUsers.get(projectId)!.values());
-          io.to(projectId).emit('presence-update', usersInProject);
-          
-          log.debug('Usuarios activos actualizados tras salida', { 
-            projectId, 
-            activeCount: usersInProject.length 
-          });
-        }
-      }
-      
-      // Abandonar la sala del proyecto
-      socket.leave(projectId);
-    }
   });
   
-  log.info('Servidor de colaboración Socket.IO inicializado correctamente');
+  // Función auxiliar para manejar cuando un usuario abandona el proyecto
+  function handleUserLeave(socket: SocketWithUser) {
+    const user = socket.user;
+    const projectId = socket.projectId;
+    
+    if (user && projectId && activeUsers.has(projectId)) {
+      // Eliminar usuario de la lista de activos
+      activeUsers.get(projectId)!.delete(user.id);
+      
+      // Si no quedan usuarios activos, eliminar el mapa del proyecto
+      if (activeUsers.get(projectId)!.size === 0) {
+        activeUsers.delete(projectId);
+      } else {
+        // Notificar a los demás usuarios que este usuario se ha ido
+        const usersInProject = Array.from(activeUsers.get(projectId)!.values());
+        io.to(projectId).emit('presence-update', usersInProject);
+      }
+    }
+  }
+  
+  return io;
 }
