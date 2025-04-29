@@ -4,7 +4,7 @@
   "main": "dist/app.js",
   "scripts": {
     "dev": "ts-node-dev --respawn src/app.ts",
-    "build": "tsc && npx prisma migrate deploy && npx prisma generate && node dist/app.js",
+    "build": "tsc",
     "start": "node dist/app.js",
     "start:migrate": "npx prisma migrate deploy && npx prisma generate && node dist/app.js",
     "prisma": "prisma",
