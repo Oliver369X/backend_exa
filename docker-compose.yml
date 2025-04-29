@@ -15,14 +15,9 @@ services:
     build: .
     depends_on:
       - db
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@db:5432/platform_db?schema=public
-      JWT_SECRET: supersecretkey
-      PORT: 4000
+    env_file: .env
     ports:
       - "4000:4000"
-    volumes:
-      - .:/app
-    command: npm run dev
+    command: node dist/app.js
 volumes:
   db_data:
